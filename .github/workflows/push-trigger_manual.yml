@@ -8,11 +8,6 @@ on:
         required: false
         default: 'Triggered for Updates'
         type: string
-  push:
-    branches:
-      - '!master'
-      - dst-dev-*
-      - mec-*
 
 jobs:
   build-docker-artifactory-server:
