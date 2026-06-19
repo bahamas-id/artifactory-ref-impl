@@ -1,33 +1,51 @@
-name: Artifactory Manual build upon a push
+name: Maven Package Manual
 
-on:
-  workflow_dispatch:
-    inputs:
-      message:
-        description: 'Message for manually triggering'
-        required: false
-        default: 'Triggered for Updates'
-        type: string
+on: workflow_dispatch
 
 jobs:
-  build-docker-artifactory-server:
-    strategy:
-      matrix:
-        include:
-          - SERVICE_LOCATION: 'artifacts'
-            SERVICE_NAME: 'artifactory-server'
-            SQUASH_LAYERS: '77'
-            PLATFORMS: "linux/amd64"
-      fail-fast: false
-    name: ${{ matrix.SERVICE_NAME }}
-    uses: iiitb-pilot/kattu/.github/workflows/docker-build.yml@master
-    with:
-      SERVICE_LOCATION: ${{ matrix.SERVICE_LOCATION }}
-      SERVICE_NAME: ${{ matrix.SERVICE_NAME }}
-      SQUASH_LAYERS: ${{ matrix.SQUASH_LAYERS }}
-      PLATFORMS: ${{ matrix.PLATFORMS }}
-    secrets:
-      DEV_NAMESPACE_DOCKER_HUB: ${{ secrets.DEV_NAMESPACE_DOCKER_HUB }}
-      ACTOR_DOCKER_HUB: ${{ secrets.ACTOR_DOCKER_HUB }}
-      RELEASE_DOCKER_HUB: ${{ secrets.RELEASE_DOCKER_HUB }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  build-artifactory-server:
+    runs-on: ubuntu-latest
+    env: 
+      NAMESPACE: ${{ secrets. dev_namespace_docker_hub }}
+      SERVICE_NAME: artifactory-server
+      SERVICE_LOCATION: artifacts/
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        
+      - name: Setup branch and env 
+        run: |
+         # Strip git ref prefix from version
+         echo "BRANCH_NAME=$(echo ${{ github.ref }} | sed -e 's,.*/\(.*\),\1,')" >> $GITHUB_ENV
+         echo "GPG_TTY=$(tty)" >> $GITHUB_ENV
+
+      - name: setup environment
+        run: |
+          # Strip git ref prefix from version
+          echo "GPG_TTY=$(tty)" >> $GITHUB_ENV
+          echo "BRANCH_NAME=$(echo ${{ github.ref }} | sed -e 's,.*/\(.*\),\1,')" >> $GITHUB_ENV
+      
+      - name: Build image
+        run: |
+          cd "./${{env.SERVICE_LOCATION}}"
+          docker build . --file Dockerfile --tag ${{ env.SERVICE_NAME }}
+      
+      - name: Log into registry
+        run: echo "${{ secrets.release_docker_hub }}" | docker login -u ${{ secrets.actor_docker_hub }} --password-stdin
+        
+      - name: Push image
+        run: |
+          IMAGE_ID=$NAMESPACE/$SERVICE_NAME
+          
+          # Change all uppercase to lowercase
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          VERSION=$BRANCH_NAME
+          echo "push version $VERSION"
+          echo IMAGE_ID=$IMAGE_ID
+          echo VERSION=$VERSION
+          docker tag $SERVICE_NAME $IMAGE_ID:$VERSION
+          docker push $IMAGE_ID:$VERSION
